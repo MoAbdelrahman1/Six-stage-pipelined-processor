@@ -1,38 +1,32 @@
 -- ============================================================================
--- Stage 5: MEMORY (MEM)
+-- Stage 5: MEMORY (MEM) - Section 7.5
 -- ============================================================================
--- Responsibilities:
---   - Access data memory for LOAD / STORE instructions
---   - Pass ALU result through for non-memory instructions
---   - Handle stack operations (PUSH / POP) if applicable
---   - Write results into MEM/WB pipeline register
--- ============================================================================
-
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
-use IEEE.NUMERIC_STD.ALL;
 
 entity memory_stage is
     port (
-        clk            : in  std_logic;
-        rst            : in  std_logic;
-        -- Inputs from EX2/MEM register
-        alu_result     : in  std_logic_vector(15 downto 0);
-        write_data     : in  std_logic_vector(15 downto 0);
-        rd_addr_in     : in  std_logic_vector(2 downto 0);
-        -- Control signals in
+        -- From EX2
+        effective_addr : in  std_logic_vector(31 downto 0);
+        alu_result     : in  std_logic_vector(31 downto 0);
+        store_data     : in  std_logic_vector(31 downto 0);
+        -- Control signals
         mem_read       : in  std_logic;
         mem_write      : in  std_logic;
-        reg_write      : in  std_logic;
-        mem_to_reg     : in  std_logic;
-        -- Outputs to MEM/WB register
-        mem_data       : out std_logic_vector(15 downto 0);
-        alu_result_out : out std_logic_vector(15 downto 0);
-        rd_addr_out    : out std_logic_vector(2 downto 0)
+        -- Memory Interface (Port B)
+        mem_bus_addr   : out std_logic_vector(31 downto 0);
+        mem_bus_in     : out std_logic_vector(31 downto 0);
+        mem_bus_out    : in  std_logic_vector(31 downto 0);
+        -- Outputs to WB
+        mem_data_out   : out std_logic_vector(31 downto 0);
+        alu_result_out : out std_logic_vector(31 downto 0)
     );
 end entity memory_stage;
 
 architecture behavioral of memory_stage is
 begin
-    -- TODO: Implement memory access logic
+    mem_bus_addr   <= effective_addr;
+    mem_bus_in     <= store_data;
+    mem_data_out   <= mem_bus_out;
+    alu_result_out <= alu_result;
 end architecture behavioral;

@@ -1,16 +1,16 @@
 # 6-Stage Pipelined Von Neumann Processor
 
-A 16-bit pipelined processor implementation using VHDL, featuring a 6-stage pipeline and a unified Von Neumann memory architecture.
+A 32-bit pipelined processor implementation using VHDL, featuring a 6-stage pipeline and a unified Von Neumann memory architecture.
 
 ## Pipeline Architecture
-The processor uses a 6-stage pipeline to improve throughput while allowing for more complex execution logic (split across two EX stages).
+The processor uses a 6-stage pipeline to improve throughput:
 
-1.  **Fetch (IF)**: Fetches the 16-bit instruction from unified memory.
-2.  **Decode (ID)**: Decodes opcode, reads from the Register File, and generates control signals.
-3.  **Execute 1 (EX1)**: First stage of ALU execution / branch target calculation.
-4.  **Execute 2 (EX2)**: Second stage of ALU execution / completion of multi-cycle operations.
-5.  **Memory (MEM)**: Data memory access (Load/Store) from the unified memory.
-6.  **Write-Back (WB)**: Writes results back to the Register File.
+1.  **Fetch (IF)**: Fetches the 32-bit instruction from unified memory.
+2.  **Decode (ID)**: Extracts opcode/fields, reads Register File, and sign-extends 16-bit immediates to 32-bit.
+3.  **Execute 1 (EX1)**: Performs ALU operations with full forwarding support.
+4.  **Execute 2 (EX2)**: Resolves branch decisions and calculates Effective Addresses (EA).
+5.  **Memory (MEM)**: Accesses the 32-bit wide unified memory (Load/Store).
+6.  **Write-Back (WB)**: Writes results (ALU, Memory, or PC+1) back to the Register File.
 
 ## Memory Architecture (Von Neumann)
 This project implements a **Von Neumann architecture**, meaning instructions and data share the same address space. 
