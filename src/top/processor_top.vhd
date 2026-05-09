@@ -249,8 +249,14 @@ architecture rtl of processor_top is
     end function;
 
     function source2(instr : word_t) return std_logic_vector is
+        variable op : std_logic_vector(3 downto 0) := instr(31 downto 28);
+        variable fn : std_logic_vector(2 downto 0) := instr(18 downto 16);
     begin
-        return instr(21 downto 19);
+        if op = "0010" and fn = "001" then
+            return instr(24 downto 22); -- SWAP second operand is Rsrc1
+        else
+            return instr(21 downto 19);
+        end if;
     end function;
 begin
     out_port <= out_reg;
@@ -317,8 +323,8 @@ begin
                         regs(to_integer(unsigned(mem_wb.rd))) <= wb_value;
                     end if;
                     if mem_wb.is_swap = '1' then
-                        regs(to_integer(unsigned(mem_wb.rd))) <= mem_wb.result;
-                        regs(to_integer(unsigned(mem_wb.rs1))) <= mem_wb.swap_data;
+                        regs(to_integer(unsigned(mem_wb.rd))) <= mem_wb.swap_data;
+                        regs(to_integer(unsigned(mem_wb.rs1))) <= mem_wb.result;
                     end if;
                     if mem_wb.flag_write = '1' then
                         ccr <= mem_wb.flags;
@@ -400,6 +406,9 @@ begin
                 next_ex2_mem.is_hlt := ex1_ex2.is_hlt;
                 next_ex2_mem.branch_taken := branch_hit;
                 next_ex2_mem.branch_addr := branch_dest;
+                if ex1_ex2.is_swap = '1' then
+                    next_ex2_mem.rs1 := ex1_ex2.rs2;
+                end if;
                 if ex1_ex2.branch = "101" then
                     next_ex2_mem.branch_taken := '1';
                 end if;
@@ -526,7 +535,11 @@ begin
                             if fn = "000" then
                                 next_id_ex.reg_write := '1'; next_id_ex.a := regs(rs1_i); next_id_ex.rs1 := instr(24 downto 22);
                             elsif fn = "001" then
-                                next_id_ex.is_swap := '1'; next_id_ex.a := regs(rd_i); next_id_ex.b := regs(rs1_i); next_id_ex.rs1 := instr(24 downto 22);
+                                next_id_ex.is_swap := '1';
+                                next_id_ex.a := regs(rd_i);
+                                next_id_ex.b := regs(rs1_i);
+                                next_id_ex.rs1 := instr(27 downto 25);
+                                next_id_ex.rs2 := instr(24 downto 22);
                             end if;
                         when "0011" =>
                             next_id_ex.reg_write := '1'; next_id_ex.flag_write := '1'; next_id_ex.alu_op := fn;
