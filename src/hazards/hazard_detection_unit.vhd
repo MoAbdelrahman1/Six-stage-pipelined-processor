@@ -31,5 +31,26 @@ end entity hazard_detection_unit;
 
 architecture behavioral of hazard_detection_unit is
 begin
-    -- TODO: Implement hazard detection logic
+    process(rs1_addr_id, rs2_addr_id, rd_addr_ex1, mem_read_ex1, branch_taken)
+    begin
+        stall_if <= '0';
+        stall_id <= '0';
+        flush_if_id <= '0';
+        flush_id_ex1 <= '0';
+
+        -- Load-use hazard: the loaded value is not available soon enough for
+        -- the immediately following instruction, so freeze IF/ID and bubble EX1.
+        if mem_read_ex1 = '1' and (rd_addr_ex1 = rs1_addr_id or rd_addr_ex1 = rs2_addr_id) then
+            stall_if <= '1';
+            stall_id <= '1';
+            flush_id_ex1 <= '1';
+        end if;
+
+        -- Static branch prediction is not-taken. A taken branch flushes the
+        -- younger instructions fetched on the predicted path.
+        if branch_taken = '1' then
+            flush_if_id <= '1';
+            flush_id_ex1 <= '1';
+        end if;
+    end process;
 end architecture behavioral;

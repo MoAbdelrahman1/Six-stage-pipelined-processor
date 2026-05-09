@@ -1,0 +1,20 @@
+# Questa/ModelSim generated files
+work/
+transcript
+vsim.wlf
+*.wlf
+*.vstf
+*.ucdb
+*.jou
+*.log
+modelsim.ini
+
+# Python generated files
+__pycache__/
+*.py[cod]
+
+# Editor/OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

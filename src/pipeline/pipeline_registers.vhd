@@ -28,10 +28,13 @@ begin
                 pc_plus1_out <= pc_plus1_in;
             end if;
         end if;
-    end process;
+end process;
 end arch;
 
 -- 8.2 ID/EX1 Register
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+
 entity id_ex1_register is
     port (
         clk, rst, clr : in  std_logic;

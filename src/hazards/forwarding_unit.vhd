@@ -31,5 +31,27 @@ end entity forwarding_unit;
 
 architecture behavioral of forwarding_unit is
 begin
-    -- TODO: Implement forwarding logic
+    process(rs1_addr_ex1, rs2_addr_ex1, rd_addr_ex2, rd_addr_mem, rd_addr_wb,
+            reg_write_ex2, reg_write_mem, reg_write_wb)
+    begin
+        fwd_sel_a <= "00";
+        fwd_sel_b <= "00";
+
+        -- Priority is nearest producer first: EX2, then MEM, then WB.
+        if reg_write_ex2 = '1' and rd_addr_ex2 = rs1_addr_ex1 then
+            fwd_sel_a <= "01";
+        elsif reg_write_mem = '1' and rd_addr_mem = rs1_addr_ex1 then
+            fwd_sel_a <= "10";
+        elsif reg_write_wb = '1' and rd_addr_wb = rs1_addr_ex1 then
+            fwd_sel_a <= "11";
+        end if;
+
+        if reg_write_ex2 = '1' and rd_addr_ex2 = rs2_addr_ex1 then
+            fwd_sel_b <= "01";
+        elsif reg_write_mem = '1' and rd_addr_mem = rs2_addr_ex1 then
+            fwd_sel_b <= "10";
+        elsif reg_write_wb = '1' and rd_addr_wb = rs2_addr_ex1 then
+            fwd_sel_b <= "11";
+        end if;
+    end process;
 end architecture behavioral;
