@@ -195,6 +195,7 @@ architecture rtl of processor_top is
     signal ex1_ex2  : ex1_ex2_t := EX1_EX2_ZERO;
     signal ex2_mem  : ex2_mem_t := EX2_MEM_ZERO;
     signal mem_wb   : mem_wb_t := MEM_WB_ZERO;
+    signal interrupt_pending : std_logic := '0';
 
     function sx16(v : std_logic_vector(15 downto 0)) return word_t is
     begin
@@ -273,6 +274,9 @@ begin
         variable next_ex1_ex2 : ex1_ex2_t;
         variable next_ex2_mem : ex2_mem_t;
         variable next_mem_wb  : mem_wb_t;
+        variable next_pc       : unsigned(31 downto 0);
+        variable next_interrupt_pending : std_logic;
+        variable pipeline_empty_next : std_logic;
         variable instr        : word_t;
         variable op           : std_logic_vector(3 downto 0);
         variable fn           : std_logic_vector(2 downto 0);
@@ -300,6 +304,7 @@ begin
             ccr <= (others => '0');
             out_reg <= (others => '0');
             halt_reg <= '0';
+            interrupt_pending <= '0';
             if_id <= IF_ID_ZERO;
             id_ex <= ID_EX_ZERO;
             ex1_ex2 <= EX1_EX2_ZERO;
@@ -307,6 +312,12 @@ begin
             mem_wb <= MEM_WB_ZERO;
         elsif rising_edge(clk) then
             if halt_reg = '0' then
+                next_pc := pc;
+                next_interrupt_pending := interrupt_pending;
+                if intr_in = '1' then
+                    next_interrupt_pending := '1';
+                end if;
+
                 next_if_id := IF_ID_ZERO;
                 next_id_ex := ID_EX_ZERO;
                 next_ex1_ex2 := EX1_EX2_ZERO;
@@ -584,36 +595,49 @@ begin
 
                 -- IF stage: static not-taken prediction.
                 if mem_branch_hit = '1' then
-                    pc <= unsigned(mem_branch_dest);
+                    next_pc := unsigned(mem_branch_dest);
                     next_if_id := IF_ID_ZERO;
                     next_id_ex := ID_EX_ZERO;
                     next_ex1_ex2 := EX1_EX2_ZERO;
                     next_ex2_mem := EX2_MEM_ZERO;
                 elsif branch_hit = '1' then
-                    pc <= unsigned(branch_dest);
+                    next_pc := unsigned(branch_dest);
                     next_if_id := IF_ID_ZERO;
                     next_id_ex := ID_EX_ZERO;
                     next_ex1_ex2 := EX1_EX2_ZERO;
                 elsif load_use = '1' then
                     next_if_id := if_id;
+                elsif next_interrupt_pending = '1' then
+                    next_if_id := IF_ID_ZERO;
                 else
                     next_if_id.valid := '1';
                     next_if_id.pc := std_logic_vector(pc);
                     next_if_id.pc_next := std_logic_vector(pc + 1);
                     next_if_id.instr := ram(to_integer(pc(11 downto 0)));
-                    pc <= pc + 1;
+                    next_pc := pc + 1;
                 end if;
 
-                if intr_in = '1' then
-                    -- External interrupt: save next PC and vector through M[1].
-                    ram(to_integer(sp(11 downto 0))) <= std_logic_vector(pc);
+                pipeline_empty_next := '0';
+                if next_if_id.valid = '0' and next_id_ex.valid = '0' and next_ex1_ex2.valid = '0' and
+                   next_ex2_mem.valid = '0' and next_mem_wb.valid = '0' then
+                    pipeline_empty_next := '1';
+                end if;
+
+                if next_interrupt_pending = '1' and pipeline_empty_next = '1' then
+                    -- External interrupt: save final PC after drain, then vector through M[1].
+                    ram(to_integer(sp(11 downto 0))) <= std_logic_vector(next_pc);
                     sp <= sp - 1;
-                    pc <= unsigned(ram(1));
+                    next_pc := unsigned(ram(1));
+                    next_interrupt_pending := '0';
                     next_if_id := IF_ID_ZERO;
                     next_id_ex := ID_EX_ZERO;
                     next_ex1_ex2 := EX1_EX2_ZERO;
+                    next_ex2_mem := EX2_MEM_ZERO;
+                    next_mem_wb := MEM_WB_ZERO;
                 end if;
 
+                pc <= next_pc;
+                interrupt_pending <= next_interrupt_pending;
                 if_id <= next_if_id;
                 id_ex <= next_id_ex;
                 ex1_ex2 <= next_ex1_ex2;

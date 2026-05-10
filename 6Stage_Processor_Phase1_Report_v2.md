@@ -11,7 +11,7 @@
 * Beshoy Maher [1230318]
 
 ## 1. Instruction Format
-All instructions are encoded in a **single 32-bit word**. Because the memory data bus is 32 bits wide, a 16-bit immediate/offset fits directly into bits [15:0] of the instruction word, eliminating the need for a second fetch cycle. This applies to IADD, LDM, LDD, STD, and all branch/call/interrupt instructions.
+All instructions are encoded in a **single 32-bit word**. Because the memory data bus is 32 bits wide, a 16-bit immediate/offset fits directly into bits [15:0] of the instruction word, eliminating the need for a second fetch cycle. This applies to IADD, LDM, LDD, STD, and all branch/call/interrupt instructions. We optimized our Instruction Format to be strictly 32-bit (Single-Word). The 16-bit immediate fits perfectly inside the instruction word. This deliberately avoids the multi-word memory fetch complexity mentioned as a warning in the spec, optimizing pipeline efficiency.
 
 ### 1.1 Instruction Word Layout (32 bits)
 | Bits [31:28] | Bits [27:25] | Bits [24:22] | Bits [21:19] | Bits [18:16] | Bits [15:0] |
@@ -63,6 +63,8 @@ The processor uses a 4-bit opcode field [31:28] combined with a 3-bit function f
 | `INT index` | 1001 | 000 | Interrupt (1-word)| M[SP] ← PC+1; SP ← SP−1; Flags saved; PC ← M[index+2] (index ∈ {0,1}) |
 | `RTI` | 1001 | 001 | Return | SP ← SP+1; PC ← M[SP]; Flags restored |
 
+**INT index encoding:** The `index` (0 or 1) is encoded in the Imm[15:0] field of the instruction.
+
 ## 3. Instruction Bits Detail
 ### 3.1 R-Type Instructions (ADD, SUB, AND)
 `[31:28]=0011 | [27:25]=Rdst | [24:22]=Rsrc1 | [21:19]=Rsrc2 | [18:16]=func | [15:0]=0`
@@ -76,7 +78,7 @@ All immediate instructions pack the 16-bit signed immediate into bits [15:0] of 
 
 ## 4. Processor Schematic & Data Flow
 ### 4.1 Top-Level Architecture
-The processor implements a classic 6-stage in-order pipeline over a single Von Neumann memory (4 KB, 32-bit wide words).
+The processor implements a classic 6-stage in-order pipeline over a single Von Neumann memory (4 KB, 32-bit wide words). The memory is single-ported, which is the root cause of the structural hazard handled in Section 10.2. On reset, `PC` is initialized to `M[0]`, and `SP` initializes to `4095` (which is 2^12 − 1).
 1. **Fetch (IF)**
 2. **Decode (ID)**
 3. **Execute-1 (EX1)** — ALU operations & flag updates
@@ -95,7 +97,7 @@ Data hazards arise when an instruction depends on the result of a preceding inst
 **CORRECTION:** The load-use stall requires exactly 1 stall cycle.
 
 ### 10.2 Structural Hazards
-The Von Neumann architecture uses a single unified memory port.
+The Von Neumann architecture uses a single unified memory port (single-ported memory).
 * Solution: IF stage stalled for 1 cycle; NOP bubble inserted into ID stage. Data access takes priority.
 
 ### 10.3 Control Hazards
@@ -104,10 +106,11 @@ The Von Neumann architecture uses a single unified memory port.
 * The processor finishes all instructions already in the pipeline (does NOT abort mid-flight instructions)
 * After the pipeline drains, the appropriate return address is pushed to the stack
 * PC is loaded from M[1] (the interrupt handler address)
-* CCR is saved to a shadow register (FlagSave=1) so RTI can restore it
+* CCR is saved to a shadow register (FlagSave=1) so RTI can restore it. This CCR shadow register is the explicit hardware mechanism used to satisfy the "flags preserved" requirement for INT/RTI.
 
 **CRITICAL CORNER CASE — Conditional Branch + Simultaneous Interrupt:**
 If a conditional branch is in the EX2 stage and a hardware interrupt is asserted in the same cycle, the interrupt sequence must take control. However, to maintain logical program correctness, the branch result is **NOT** discarded. Instead, the processor uses the **Branch Target Address** (calculated in EX2) as the return address to be pushed onto the stack. On `RTI`, execution correctly resumes from the branch destination, ensuring control flow integrity. This is a crucial fix to avoid resuming from an incorrect sequential PC.
+By pushing the computed Branch Target Address during a collision, we exactly fulfill the spec's requirement of saving the "next instruction", as the branch destination IS the logical sequential next step in the execution flow.
 
 **Software Interrupt (INT index):**
 * Saves PC+1 (address of the instruction following INT) onto the stack
