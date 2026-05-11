@@ -1,6 +1,3 @@
--- ============================================================================
--- Control Unit (Section 6)
--- ============================================================================
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 
@@ -8,7 +5,7 @@ entity control_unit is
     port (
         opcode     : in  std_logic_vector(3 downto 0);
         func       : in  std_logic_vector(2 downto 0);
-        -- Signals from Section 6
+
         reg_write  : out std_logic;
         reg_dst    : out std_logic_vector(1 downto 0);
         alu_src    : out std_logic_vector(1 downto 0);
@@ -29,39 +26,38 @@ architecture behavioral of control_unit is
 begin
     process(opcode, func)
     begin
-        -- Default values (NOP-like state)
         reg_write <= '0'; reg_dst <= "00"; alu_src <= "00"; alu_op <= "101";
         mem_read <= '0'; mem_write <= '0'; mem_to_reg <= "00"; branch <= "000";
         pc_src <= "00"; sp_op <= "00"; out_port_en <= '0'; flag_write <= '0';
         is_interrupt <= '0';
 
         case opcode is
-            when "0011" => -- R-type (ADD, SUB, AND)
+            when "0011" =>
                 reg_write <= '1';
                 flag_write <= '1';
-                alu_op <= func; -- Uses func as ALUop
+                alu_op <= func;
             
-            when "0100" => -- IADD
+            when "0100" =>
                 reg_write <= '1';
                 flag_write <= '1';
-                alu_src <= "01"; -- Immediate
-                alu_op <= "000"; -- ADD
+                alu_src <= "01";
+                alu_op <= "000";
             
-            when "0110" => -- Load/Store (LDM, LDD, STD)
-                if func = "000" then -- LDM
+            when "0110" =>
+                if func = "000" then
                     reg_write <= '1';
                     alu_src <= "01";
-                    alu_op <= "101"; -- PASS
-                elsif func = "001" then -- LDD
+                    alu_op <= "101";
+                elsif func = "001" then
                     reg_write <= '1';
                     mem_read <= '1';
-                    mem_to_reg <= "01"; -- Memory Data
-                elsif func = "011" then -- STD
+                    mem_to_reg <= "01";
+                elsif func = "011" then
                     mem_write <= '1';
                 end if;
 
-            when "0111" => -- Branches
-                branch <= func; -- Maps to JZ, JN, JC, JMP
+            when "0111" =>
+                branch <= func;
             
             when others => null;
         end case;

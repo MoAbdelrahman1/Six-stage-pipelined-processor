@@ -33,24 +33,9 @@ begin
             dbg_r3 => r3, dbg_r4 => r4, dbg_r5 => r5, dbg_r6 => r6, dbg_r7 => r7
         );
 
-    -- Drive in_port based on PC
     process(clk)
     begin
         if rising_edge(clk) then
-            -- IN is at index 18 (0x12) in the source?
-            -- Let's re-calculate:
-            -- .org 0
-            -- .word 5  (addr 0)
-            -- .org 5
-            -- LDM R0, 1 (addr 5)
-            -- LDM R1, AAAA (addr 6)
-            -- LDM R2, FFFF (addr 7)
-            -- INC R0 (addr 8)
-            -- MOV R4, R1 (addr 9)
-            -- NOT R1 (addr 10)
-            -- MOV R3, R0 (addr 11)
-            -- IN R0 (addr 12 / 0x0C)
-            -- It enters EX1 when Fetch PC is 14 (0x0E).
             if unsigned(pc) = 14 then
                 in_port <= x"FFFFFFFF";
             else

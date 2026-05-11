@@ -1,6 +1,3 @@
--- ============================================================================
--- Data Memory (Unified Von Neumann)
--- ============================================================================
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
@@ -9,10 +6,9 @@ entity data_memory is
     port (
         clk         : in  std_logic;
         rst         : in  std_logic;
-        -- Port A (Instruction Fetch)
         instr_addr  : in  std_logic_vector(31 downto 0);
         instr_out   : out std_logic_vector(31 downto 0);
-        -- Port B (Data Access)
+
         data_addr   : in  std_logic_vector(31 downto 0);
         data_in     : in  std_logic_vector(31 downto 0);
         mem_read    : in  std_logic;
@@ -24,14 +20,12 @@ end entity data_memory;
 architecture behavioral of data_memory is
     type ram_type is array (0 to 4095) of std_logic_vector(31 downto 0);
     signal ram : ram_type := (
-        0 => x"00000000", -- Reset vector example
+        0 => x"00000000",
         others => (others => '0')
     );
 begin
-    -- Asynchronous read for Instruction Fetch
     instr_out <= ram(to_integer(unsigned(instr_addr(11 downto 0))));
 
-    -- Synchronous Data Access
     process(clk)
     begin
         if rising_edge(clk) then

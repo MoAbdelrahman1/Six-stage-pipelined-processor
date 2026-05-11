@@ -1,6 +1,3 @@
--- ============================================================================
--- Integrated 6-stage pipelined processor
--- ============================================================================
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
@@ -96,7 +93,7 @@ architecture rtl of processor_top is
         mem_to_reg : std_logic;
         flag_write : std_logic;
         branch     : std_logic_vector(2 downto 0);
-        stack_op   : std_logic_vector(1 downto 0); -- 00 none, 01 push, 10 pop
+        stack_op   : std_logic_vector(1 downto 0); -- none, push, pop
         is_swap    : std_logic;
         is_out     : std_logic;
         is_in      : std_logic;
@@ -208,7 +205,7 @@ architecture rtl of processor_top is
     signal regs     : reg_t := (others => (others => '0'));
     signal pc       : unsigned(31 downto 0) := (others => '0');
     signal sp       : unsigned(31 downto 0) := to_unsigned(4095, 32);
-    signal ccr      : std_logic_vector(2 downto 0) := (others => '0'); -- Z,N,C
+    signal ccr      : std_logic_vector(2 downto 0) := (others => '0'); -- Z, N, C
     signal out_reg  : word_t := (others => '0');
     signal halt_reg : std_logic := '0';
 
@@ -218,7 +215,7 @@ architecture rtl of processor_top is
     signal ex2_mem  : ex2_mem_t := EX2_MEM_ZERO;
     signal mem_wb   : mem_wb_t := MEM_WB_ZERO;
     signal interrupt_pending : std_logic := '0';
-    signal pred_state  : predictor_state_t := (others => to_unsigned(1, 2)); -- 00/01 not taken, 10/11 taken
+    signal pred_state  : predictor_state_t := (others => to_unsigned(1, 2));
     signal pred_target : predictor_target_t := (others => (others => '0'));
     signal pred_tag    : predictor_target_t := (others => (others => '0'));
     signal pred_valid  : predictor_valid_t := (others => '0');
@@ -267,9 +264,9 @@ architecture rtl of processor_top is
         variable fn : std_logic_vector(2 downto 0) := instr(18 downto 16);
     begin
         if op = "0001" and (fn = "000" or fn = "001") then
-            return instr(27 downto 25); -- NOT/INC use Rdst
+            return instr(27 downto 25);
         elsif op = "0010" and fn = "001" then
-            return instr(27 downto 25); -- SWAP reads Rdst and Rsrc1
+            return instr(27 downto 25);
         else
             return instr(24 downto 22);
         end if;
@@ -280,7 +277,7 @@ architecture rtl of processor_top is
         variable fn : std_logic_vector(2 downto 0) := instr(18 downto 16);
     begin
         if op = "0010" and fn = "001" then
-            return instr(24 downto 22); -- SWAP second operand is Rsrc1
+            return instr(24 downto 22);
         else
             return instr(21 downto 19);
         end if;
@@ -387,12 +384,12 @@ begin
                     if mem_wb.flag_write = '1' then
                         next_ccr := mem_wb.flags;
                     end if;
-                    -- Safe branch flag clearing in WB stage
+                    -- Conditional jumps consume their flag once they are taken.
                     if mem_wb.branch_taken = '1' then
                         case mem_wb.branch is
-                            when "001" => next_ccr(0) := '0'; -- JZ
-                            when "010" => next_ccr(1) := '0'; -- JN
-                            when "011" => next_ccr(2) := '0'; -- JC
+                            when "001" => next_ccr(0) := '0';
+                            when "010" => next_ccr(1) := '0';
+                            when "011" => next_ccr(2) := '0';
                             when others => null;
                         end case;
                     end if;
@@ -401,7 +398,7 @@ begin
                     end if;
                 end if;
 
-                -- MEM stage
+                -- Memory stage
                 mem_branch_hit := '0';
                 mem_branch_dest := (others => '0');
                 next_mem_wb.valid := ex2_mem.valid;
@@ -442,7 +439,7 @@ begin
                     end if;
                 end if;
 
-                -- EX2 stage: branches, memory addresses, stack return addresses
+                -- EX2 resolves branches and prepares memory addresses.
                 f_val := ccr;
                 if ex2_mem.valid = '1' and ex2_mem.flag_write = '1' then
                     f_val := ex2_mem.flags;
@@ -457,11 +454,11 @@ begin
                 branch_mispredict := '0';
                 if ex1_ex2.valid = '1' then
                     case ex1_ex2.branch is
-                        when "001" => if f_val(0) = '1' then branch_hit := '1'; end if; -- JZ
-                        when "010" => if f_val(1) = '1' then branch_hit := '1'; end if; -- JN
-                        when "011" => if f_val(2) = '1' then branch_hit := '1'; end if; -- JC
-                        when "100" => branch_hit := '1'; -- JMP/CALL/INT
-                        when "101" => null; -- RET/RTI redirect after stack pop in MEM
+                        when "001" => if f_val(0) = '1' then branch_hit := '1'; end if;
+                        when "010" => if f_val(1) = '1' then branch_hit := '1'; end if;
+                        when "011" => if f_val(2) = '1' then branch_hit := '1'; end if;
+                        when "100" => branch_hit := '1';
+                        when "101" => null;
                         when others => null;
                     end case;
                     if ex1_ex2.branch /= "000" and ex1_ex2.branch /= "101" then
@@ -538,7 +535,7 @@ begin
                     branch_dest := next_ex2_mem.branch_addr;
                 end if;
 
-                -- EX1 stage with forwarding from EX2/MEM and MEM/WB.
+                -- EX1 operand forwarding.
                 a_val := id_ex.a;
                 b_val := id_ex.b;
                 if id_ex.valid = '1' then
@@ -600,7 +597,7 @@ begin
                     next_ex1_ex2.result := id_ex.imm;
                 end if;
 
-                -- ID stage
+                -- Decode stage
                 instr := if_id.instr;
                 op := instr(31 downto 28);
                 fn := instr(18 downto 16);
@@ -695,7 +692,7 @@ begin
                     end case;
                 end if;
 
-                -- IF stage: 2-bit dynamic prediction with BTB target.
+                -- Fetch stage with the branch predictor.
                 if mem_branch_hit = '1' then
                     next_pc := unsigned(mem_branch_dest);
                     next_if_id := IF_ID_ZERO;
@@ -741,7 +738,7 @@ begin
                 end if;
 
                 if next_interrupt_pending = '1' and pipeline_empty_next = '1' then
-                    -- External interrupt: save final PC after drain, then vector through M[1].
+                    -- Service the pending external interrupt after the pipe drains.
                     ram(to_integer(sp(11 downto 0))) <= std_logic_vector(next_pc);
                     sp <= sp - 1;
                     next_pc := unsigned(ram(1));

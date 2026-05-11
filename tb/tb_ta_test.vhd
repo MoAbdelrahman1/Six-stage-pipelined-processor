@@ -22,10 +22,8 @@ architecture sim of tb_ta_test is
 
     constant CLK_PERIOD : time := 10 ns;
 begin
-    -- Clock Generation
     clk <= not clk after CLK_PERIOD / 2;
 
-    -- Device Under Test (DUT)
     dut: entity work.processor_top
         generic map (MEM_FILE => "programs/test5.mem")
         port map (
@@ -35,24 +33,16 @@ begin
             dbg_r3 => r3, dbg_r4 => r4, dbg_r5 => r5, dbg_r6 => r6, dbg_r7 => r7
         );
 
-    ---------------------------------------------------------------------------
-    -- Hardware Interrupt Stimulus (Tuned exactly for test5.mem)
-    -- 1. Triggers First Interrupt at PC 0x75 to enter the ISR.
-    -- 2. Triggers Second Interrupt at PC 0x904 (right after RTI) to test loop.
-    ---------------------------------------------------------------------------
     hw_interrupt_stim: process
     begin
         intr_in <= '0';
         
-        -- FIRST INTERRUPT: Target the 'INC R1' instruction at address 0x75
         wait until rising_edge(clk) and pc = x"00000075";
         report "Triggering FIRST Hardware Interrupt to enter ISR (PC=0x0075)";
         intr_in <= '1';
         wait until rising_edge(clk);
         intr_in <= '0';
         
-        -- SECOND INTERRUPT: Target the instruction after RTI at address 0x904
-        -- (This only happens after the processor finishes the first ISR)
         wait until rising_edge(clk) and pc = x"00000904";
         report "Triggering SECOND Hardware Interrupt corner case (PC=0x0904)";
         intr_in <= '1';
@@ -62,9 +52,6 @@ begin
         wait;
     end process;
 
-    ---------------------------------------------------------------------------
-    -- Input Port Stimulus (Synchronized with Fetch PC)
-    ---------------------------------------------------------------------------
     process(clk)
         variable v_pc : integer;
     begin
@@ -78,24 +65,18 @@ begin
                 when 85   => in_port <= x"0000003C"; -- R1=60 at PC 0x53+2
                 when 98   => in_port <= x"00000046"; -- R1=70 at PC 0x60+2
                 when 130  => in_port <= x"000002BC"; -- R6=700 at PC 0x80+2
-                -- ISR Input
-                when 2306 => in_port <= x"00000005"; -- R7=5 at PC 0x900+2
+                when 2306 => in_port <= x"00000005"; -- R7=5
                 when others => null;
             end case;
         end if;
     end process;
 
-    ---------------------------------------------------------------------------
-    -- Main Control Process
-    ---------------------------------------------------------------------------
     stim: process
     begin
-        -- Reset sequence
         rst <= '1';
         wait for 2 * CLK_PERIOD;
         rst <= '0';
         
-        -- Wait until the processor reaches the HLT instruction
         wait until halted = '1';
         wait for 2 * CLK_PERIOD;
         report "TA test completed";

@@ -72,14 +72,13 @@ def number(token: str, labels: dict[str, int]) -> int:
     token = token.strip()
     if token in labels:
         return labels[token]
-    # Allow R0-R7 to be used as raw values (0-7) to support custom test patterns
     if re.fullmatch(r"R[0-7]", token, re.IGNORECASE):
         return int(token[1])
     if token.lower().startswith("0x"):
         return int(token, 16)
     if token.lower().endswith("h"):
         return int(token[:-1], 16)
-    return int(token, 16) # Default to hex
+    return int(token, 16)
 
 
 def encode(opcode: int, rdst: int = 0, rs1: int = 0, rs2: int = 0,
@@ -145,7 +144,6 @@ def assemble_line(line: str, labels: dict[str, int]) -> int:
         return number(operands[0], labels) & 0xFFFFFFFF
 
     if mnemonic not in OPCODES:
-        # If it's not a mnemonic, try parsing it as a bare number (data word)
         try:
             return number(parts[0], labels) & 0xFFFFFFFF
         except ValueError:
