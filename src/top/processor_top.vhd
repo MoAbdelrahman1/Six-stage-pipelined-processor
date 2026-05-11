@@ -141,6 +141,7 @@ architecture rtl of processor_top is
         is_hlt     : std_logic;
         branch_taken : std_logic;
         branch_addr  : word_t;
+        branch       : std_logic_vector(2 downto 0);
     end record;
 
     type mem_wb_t is record
@@ -156,6 +157,8 @@ architecture rtl of processor_top is
         flag_write : std_logic;
         is_swap    : std_logic;
         is_hlt     : std_logic;
+        branch_taken : std_logic;
+        branch       : std_logic_vector(2 downto 0);
     end record;
 
     constant IF_ID_ZERO   : if_id_t   := ('0', (others => '0'), (others => '0'), (others => '0'));
@@ -174,12 +177,13 @@ architecture rtl of processor_top is
         result => (others => '0'), store_data => (others => '0'), flags => (others => '0'),
         reg_write => '0', mem_read => '0', mem_write => '0', mem_to_reg => '0', flag_write => '0',
         stack_op => (others => '0'), is_swap => '0', is_out => '0', is_in => '0', is_hlt => '0',
-        branch_taken => '0', branch_addr => (others => '0')
+        branch_taken => '0', branch_addr => (others => '0'), branch => (others => '0')
     );
     constant MEM_WB_ZERO  : mem_wb_t  := (
         valid => '0', rd => (others => '0'), rs1 => (others => '0'), result => (others => '0'),
         mem_data => (others => '0'), swap_data => (others => '0'), flags => (others => '0'),
-        reg_write => '0', mem_to_reg => '0', flag_write => '0', is_swap => '0', is_hlt => '0'
+        reg_write => '0', mem_to_reg => '0', flag_write => '0', is_swap => '0', is_hlt => '0',
+        branch_taken => '0', branch => (others => '0')
     );
 
     signal ram      : ram_t := init_ram;
@@ -275,6 +279,7 @@ begin
         variable next_ex2_mem : ex2_mem_t;
         variable next_mem_wb  : mem_wb_t;
         variable next_pc       : unsigned(31 downto 0);
+        variable next_ccr      : std_logic_vector(2 downto 0);
         variable next_interrupt_pending : std_logic;
         variable pipeline_empty_next : std_logic;
         variable instr        : word_t;
@@ -293,6 +298,7 @@ begin
         variable mem_branch_hit  : std_logic;
         variable mem_branch_dest : word_t;
         variable load_use     : std_logic;
+        variable f_val        : std_logic_vector(2 downto 0);
         variable s1           : std_logic_vector(2 downto 0);
         variable s2           : std_logic_vector(2 downto 0);
         variable sp_addr      : unsigned(31 downto 0);
@@ -313,6 +319,7 @@ begin
         elsif rising_edge(clk) then
             if halt_reg = '0' then
                 next_pc := pc;
+                next_ccr := ccr;
                 next_interrupt_pending := interrupt_pending;
                 if intr_in = '1' then
                     next_interrupt_pending := '1';
@@ -338,7 +345,16 @@ begin
                         regs(to_integer(unsigned(mem_wb.rs1))) <= mem_wb.result;
                     end if;
                     if mem_wb.flag_write = '1' then
-                        ccr <= mem_wb.flags;
+                        next_ccr := mem_wb.flags;
+                    end if;
+                    -- Safe branch flag clearing in WB stage
+                    if mem_wb.branch_taken = '1' then
+                        case mem_wb.branch is
+                            when "001" => next_ccr(0) := '0'; -- JZ
+                            when "010" => next_ccr(1) := '0'; -- JN
+                            when "011" => next_ccr(2) := '0'; -- JC
+                            when others => null;
+                        end case;
                     end if;
                     if mem_wb.is_hlt = '1' then
                         halt_reg <= '1';
@@ -359,6 +375,8 @@ begin
                 next_mem_wb.flag_write := ex2_mem.flag_write;
                 next_mem_wb.is_swap := ex2_mem.is_swap;
                 next_mem_wb.is_hlt := ex2_mem.is_hlt;
+                next_mem_wb.branch_taken := ex2_mem.branch_taken;
+                next_mem_wb.branch := ex2_mem.branch;
 
                 if ex2_mem.valid = '1' then
                     if ex2_mem.mem_read = '1' then
@@ -385,17 +403,28 @@ begin
                 end if;
 
                 -- EX2 stage: branches, memory addresses, stack return addresses
+                f_val := ccr;
+                if ex2_mem.valid = '1' and ex2_mem.flag_write = '1' then
+                    f_val := ex2_mem.flags;
+                elsif mem_wb.valid = '1' and mem_wb.flag_write = '1' then
+                    f_val := mem_wb.flags;
+                end if;
+
                 branch_hit := '0';
                 branch_dest := ex1_ex2.imm;
                 if ex1_ex2.valid = '1' then
                     case ex1_ex2.branch is
-                        when "001" => if ccr(0) = '1' then branch_hit := '1'; end if; -- JZ
-                        when "010" => if ccr(1) = '1' then branch_hit := '1'; end if; -- JN
-                        when "011" => if ccr(2) = '1' then branch_hit := '1'; end if; -- JC
+                        when "001" => if f_val(0) = '1' then branch_hit := '1'; end if; -- JZ
+                        when "010" => if f_val(1) = '1' then branch_hit := '1'; end if; -- JN
+                        when "011" => if f_val(2) = '1' then branch_hit := '1'; end if; -- JC
                         when "100" => branch_hit := '1'; -- JMP/CALL/INT
                         when "101" => null; -- RET/RTI redirect after stack pop in MEM
                         when others => null;
                     end case;
+                end if;
+
+                if ex1_ex2.valid = '1' and branch_hit = '1' then
+                    null; -- Clear logic moved to WB for safety
                 end if;
 
                 next_ex2_mem.valid := ex1_ex2.valid;
@@ -417,6 +446,7 @@ begin
                 next_ex2_mem.is_hlt := ex1_ex2.is_hlt;
                 next_ex2_mem.branch_taken := branch_hit;
                 next_ex2_mem.branch_addr := branch_dest;
+                next_ex2_mem.branch := ex1_ex2.branch;
                 if ex1_ex2.is_swap = '1' then
                     next_ex2_mem.rs1 := ex1_ex2.rs2;
                 end if;
@@ -637,6 +667,7 @@ begin
                 end if;
 
                 pc <= next_pc;
+                ccr <= next_ccr;
                 interrupt_pending <= next_interrupt_pending;
                 if_id <= next_if_id;
                 id_ex <= next_id_ex;
