@@ -2,6 +2,7 @@
 work/
 transcript
 vsim.wlf
+wlft*
 *.wlf
 *.vstf
 *.ucdb
