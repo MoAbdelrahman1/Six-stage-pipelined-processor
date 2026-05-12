@@ -77,9 +77,31 @@ of the datapath.
 
 ### Control Hazards
 
-Static branch prediction is "not taken". Conditional branches and jumps are
-resolved in EX2. When a branch is taken, younger fetched/decode instructions are
-flushed and the PC is redirected to the branch target.
+The base control-hazard solution used static "not taken" prediction. This branch
+adds the bonus dynamic predictor:
+
+- 16-entry branch history table
+- 2-bit saturating counter per entry
+- branch target buffer (BTB) target per entry
+- PC tag per entry to prevent low-bit aliasing from redirecting non-branch PCs
+
+Counter interpretation:
+
+- `00`: strongly not taken
+- `01`: weakly not taken
+- `10`: weakly taken
+- `11`: strongly taken
+
+Fetch checks the predictor using the current PC. If the entry is valid, the tag
+matches the PC, and the counter MSB is `1`, fetch predicts taken and uses the BTB
+target as the next PC. Otherwise fetch uses `PC + 1`.
+
+Branches are still resolved in EX2. On resolution, the counter is incremented for
+taken branches and decremented for not-taken branches, saturating at `00` and
+`11`. Taken branches also update the BTB target.
+
+If the prediction disagrees with the actual branch decision or predicts the wrong
+target, younger instructions are flushed and the PC is corrected.
 
 `RET` and `RTI` redirect after the stack pop in the memory stage because the
 return PC is only available after reading the stack.
@@ -112,6 +134,8 @@ Main testbenches:
 - `tb/tb_processor.vhd`: smoke test for ALU, memory, forwarding, output, and halt.
 - `tb/tb_phase2_regression.vhd`: regression for ISA core, branches, stack/CALL/RET,
   and interrupt/RTI.
+- `tb/tb_dynamic_branch.vhd`: repeated branch loop that trains and verifies the
+  2-bit dynamic branch predictor.
 
 Programs:
 
@@ -120,6 +144,7 @@ Programs:
 - `programs/branch.asm`
 - `programs/stack_call.asm`
 - `programs/interrupt.asm`
+- `programs/dynamic_branch.asm`
 
 Run script:
 
@@ -127,8 +152,9 @@ Run script:
 vsim -do sim/run.do
 ```
 
-The `.do` file adds the required clean waveform signals and runs both the smoke
-and regression testbenches.
+The `.do` file compiles the design and runs the smoke, regression, dynamic
+branch, and TA-style testbenches with bounded simulation durations so the script
+does not hang on a non-terminating test.
 
 ## Verified Results
 
@@ -140,4 +166,4 @@ The following simulations pass in Questa:
   - Branch output: `0x00000007`
   - Stack/CALL/RET output: `0x00000016`
   - Interrupt resume output: `0x00000002`
-
+- `tb_dynamic_branch`: loop output `0x00000006`

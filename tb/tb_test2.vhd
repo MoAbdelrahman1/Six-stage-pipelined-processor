@@ -5,10 +5,10 @@ use IEEE.NUMERIC_STD.ALL;
 library STD;
 use STD.ENV.ALL;
 
-entity tb_ta_test is
+entity tb_test2 is
 end entity;
 
-architecture sim of tb_ta_test is
+architecture sim of tb_test2 is
     signal clk      : std_logic := '0';
     signal rst      : std_logic := '1';
     signal intr_in  : std_logic := '0';
@@ -25,7 +25,7 @@ begin
     clk <= not clk after CLK_PERIOD / 2;
 
     dut: entity work.processor_top
-        generic map (MEM_FILE => "programs/test5.mem")
+        generic map (MEM_FILE => "programs/test2.mem")
         port map (
             clk => clk, rst => rst, intr_in => intr_in, in_port => in_port,
             out_port => out_port, halted => halted, dbg_pc => pc, dbg_sp => sp,
@@ -33,39 +33,20 @@ begin
             dbg_r3 => r3, dbg_r4 => r4, dbg_r5 => r5, dbg_r6 => r6, dbg_r7 => r7
         );
 
-    hw_interrupt_stim: process
-    begin
-        intr_in <= '0';
-        
-        wait until rising_edge(clk) and pc = x"00000075";
-        report "Triggering FIRST Hardware Interrupt to enter ISR (PC=0x0075)";
-        intr_in <= '1';
-        wait until rising_edge(clk);
-        intr_in <= '0';
-        
-        wait until rising_edge(clk) and pc = x"00000904";
-        report "Triggering SECOND Hardware Interrupt corner case (PC=0x0904)";
-        intr_in <= '1';
-        wait until rising_edge(clk);
-        intr_in <= '0';
-        
-        wait;
-    end process;
-
+    -- Drive in_port based on PC
     process(clk)
         variable v_pc : integer;
     begin
         if rising_edge(clk) then
             v_pc := to_integer(unsigned(pc));
             case v_pc is
-                when 18   => in_port <= x"0000001E"; -- R1=30 at PC 0x10+2
-                when 19   => in_port <= x"00000032"; -- R2=50 at PC 0x11+2
-                when 20   => in_port <= x"00000064"; -- R3=100 at PC 0x12+2
-                when 21   => in_port <= x"0000012C"; -- R4=300 at PC 0x13+2
-                when 85   => in_port <= x"0000003C"; -- R1=60 at PC 0x53+2
-                when 98   => in_port <= x"00000046"; -- R1=70 at PC 0x60+2
-                when 130  => in_port <= x"000002BC"; -- R6=700 at PC 0x80+2
-                when 2306 => in_port <= x"00000005"; -- R7=5
+                when 18 => in_port <= x"00000032"; -- R1=50 at PC 0x10+2
+                when 19 => in_port <= x"0000001E"; -- R2=30 at PC 0x11+2
+                when 20 => in_port <= x"0000012C"; -- R3=300 at PC 0x12+2
+                when 21 => in_port <= x"00000064"; -- R4=100 at PC 0x13+2
+                when 85 => in_port <= x"00000037"; -- R1=55 at PC 0x53+2
+                when 98 => in_port <= x"0000004B"; -- R1=75 at PC 0x60+2
+                when 130 => in_port <= x"000002BC"; -- R6=700 at PC 0x80+2
                 when others => null;
             end case;
         end if;
@@ -79,8 +60,7 @@ begin
         
         wait until halted = '1';
         wait for 2 * CLK_PERIOD;
-        report "TA test completed";
+        report "Test2 completed";
         stop;
     end process;
-
 end architecture;

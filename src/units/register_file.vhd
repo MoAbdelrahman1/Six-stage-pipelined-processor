@@ -1,6 +1,3 @@
--- ============================================================================
--- Register File - 8 x 32-bit
--- ============================================================================
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
@@ -9,12 +6,11 @@ entity register_file is
     port (
         clk         : in  std_logic;
         rst         : in  std_logic;
-        -- Read ports (Asynchronous as per Section 4.2)
         read_addr1  : in  std_logic_vector(2 downto 0);
         read_addr2  : in  std_logic_vector(2 downto 0);
         read_data1  : out std_logic_vector(31 downto 0);
         read_data2  : out std_logic_vector(31 downto 0);
-        -- Write port (Synchronous as per Section 5.2)
+
         write_en    : in  std_logic;
         write_addr  : in  std_logic_vector(2 downto 0);
         write_data  : in  std_logic_vector(31 downto 0)
@@ -25,11 +21,9 @@ architecture behavioral of register_file is
     type reg_array is array (0 to 7) of std_logic_vector(31 downto 0);
     signal registers : reg_array := (others => (others => '0'));
 begin
-    -- Asynchronous Reads
     read_data1 <= registers(to_integer(unsigned(read_addr1)));
     read_data2 <= registers(to_integer(unsigned(read_addr2)));
 
-    -- Synchronous Write
     process(clk, rst)
     begin
         if rst = '1' then

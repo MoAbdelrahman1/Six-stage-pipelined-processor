@@ -1,10 +1,6 @@
--- ============================================================================
--- Pipeline Registers (Section 8)
--- ============================================================================
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 
--- 8.1 IF/ID Register
 entity if_id_register is
     port (
         clk, rst, en, clr : in  std_logic;
@@ -31,7 +27,6 @@ begin
 end process;
 end arch;
 
--- 8.2 ID/EX1 Register
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 
@@ -45,7 +40,7 @@ entity id_ex1_register is
         rs1_in        : in  std_logic_vector(2 downto 0);
         rs2_in        : in  std_logic_vector(2 downto 0);
         pc_plus1_in   : in  std_logic_vector(31 downto 0);
-        ctrl_in       : in  std_logic_vector(15 downto 0); -- Placeholder for control signals
+        ctrl_in       : in  std_logic_vector(15 downto 0);
         rdata1_out    : out std_logic_vector(31 downto 0);
         rdata2_out    : out std_logic_vector(31 downto 0);
         imm_out       : out std_logic_vector(31 downto 0);
@@ -75,5 +70,3 @@ begin
     end process;
 end arch;
 
--- Note: EX1/EX2, EX2/MEM, and MEM/WB follow similar latching patterns
--- based on the fields defined in sections 8.3, 8.4, and 8.5.

@@ -1,6 +1,3 @@
--- ============================================================================
--- Integrated 6-stage pipelined processor
--- ============================================================================
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
@@ -39,6 +36,9 @@ architecture rtl of processor_top is
     subtype word_t is std_logic_vector(31 downto 0);
     type ram_t is array (0 to 4095) of word_t;
     type reg_t is array (0 to 7) of word_t;
+    type predictor_state_t is array (0 to 15) of unsigned(1 downto 0);
+    type predictor_target_t is array (0 to 15) of word_t;
+    type predictor_valid_t is array (0 to 15) of std_logic;
 
     impure function init_ram return ram_t is
         file f       : text;
@@ -68,11 +68,15 @@ architecture rtl of processor_top is
         pc      : word_t;
         pc_next : word_t;
         instr   : word_t;
+        pred_taken  : std_logic;
+        pred_target : word_t;
     end record;
 
     type id_ex_t is record
         valid      : std_logic;
         pc_next    : word_t;
+        pred_taken : std_logic;
+        pred_target: word_t;
         opcode     : std_logic_vector(3 downto 0);
         func       : std_logic_vector(2 downto 0);
         rd         : std_logic_vector(2 downto 0);
@@ -89,7 +93,7 @@ architecture rtl of processor_top is
         mem_to_reg : std_logic;
         flag_write : std_logic;
         branch     : std_logic_vector(2 downto 0);
-        stack_op   : std_logic_vector(1 downto 0); -- 00 none, 01 push, 10 pop
+        stack_op   : std_logic_vector(1 downto 0); -- none, push, pop
         is_swap    : std_logic;
         is_out     : std_logic;
         is_in      : std_logic;
@@ -99,6 +103,8 @@ architecture rtl of processor_top is
     type ex1_ex2_t is record
         valid      : std_logic;
         pc_next    : word_t;
+        pred_taken : std_logic;
+        pred_target: word_t;
         opcode     : std_logic_vector(3 downto 0);
         func       : std_logic_vector(2 downto 0);
         rd         : std_logic_vector(2 downto 0);
@@ -141,6 +147,7 @@ architecture rtl of processor_top is
         is_hlt     : std_logic;
         branch_taken : std_logic;
         branch_addr  : word_t;
+        branch       : std_logic_vector(2 downto 0);
     end record;
 
     type mem_wb_t is record
@@ -156,37 +163,49 @@ architecture rtl of processor_top is
         flag_write : std_logic;
         is_swap    : std_logic;
         is_hlt     : std_logic;
+        branch_taken : std_logic;
+        branch       : std_logic_vector(2 downto 0);
     end record;
 
-    constant IF_ID_ZERO   : if_id_t   := ('0', (others => '0'), (others => '0'), (others => '0'));
-    constant ID_EX_ZERO   : id_ex_t   := ('0', (others => '0'), (others => '0'), (others => '0'),
-                                           (others => '0'), (others => '0'), (others => '0'),
-                                           (others => '0'), (others => '0'), (others => '0'), '0',
-                                           (others => '0'), '0', '0', '0', '0', '0',
-                                           (others => '0'), (others => '0'), '0', '0', '0', '0');
-    constant EX1_EX2_ZERO : ex1_ex2_t := ('0', (others => '0'), (others => '0'), (others => '0'),
-                                           (others => '0'), (others => '0'), (others => '0'),
-                                           (others => '0'), (others => '0'), (others => '0'),
-                                           (others => '0'), '0', '0', '0', '0', '0',
-                                           (others => '0'), (others => '0'), '0', '0', '0', '0');
+    constant IF_ID_ZERO   : if_id_t   := ('0', (others => '0'), (others => '0'), (others => '0'),
+                                           '0', (others => '0'));
+    constant ID_EX_ZERO   : id_ex_t   := (
+        valid => '0', pc_next => (others => '0'), pred_taken => '0', pred_target => (others => '0'),
+        opcode => (others => '0'), func => (others => '0'), rd => (others => '0'),
+        rs1 => (others => '0'), rs2 => (others => '0'), imm => (others => '0'),
+        a => (others => '0'), b => (others => '0'), use_imm => '0', alu_op => (others => '0'),
+        reg_write => '0', mem_read => '0', mem_write => '0', mem_to_reg => '0', flag_write => '0',
+        branch => (others => '0'), stack_op => (others => '0'), is_swap => '0',
+        is_out => '0', is_in => '0', is_hlt => '0'
+    );
+    constant EX1_EX2_ZERO : ex1_ex2_t := (
+        valid => '0', pc_next => (others => '0'), pred_taken => '0', pred_target => (others => '0'),
+        opcode => (others => '0'), func => (others => '0'), rd => (others => '0'),
+        rs1 => (others => '0'), rs2 => (others => '0'), imm => (others => '0'),
+        result => (others => '0'), b => (others => '0'), flags => (others => '0'),
+        reg_write => '0', mem_read => '0', mem_write => '0', mem_to_reg => '0', flag_write => '0',
+        branch => (others => '0'), stack_op => (others => '0'), is_swap => '0',
+        is_out => '0', is_in => '0', is_hlt => '0'
+    );
     constant EX2_MEM_ZERO : ex2_mem_t := (
         valid => '0', pc_next => (others => '0'), rd => (others => '0'), rs1 => (others => '0'),
         result => (others => '0'), store_data => (others => '0'), flags => (others => '0'),
         reg_write => '0', mem_read => '0', mem_write => '0', mem_to_reg => '0', flag_write => '0',
         stack_op => (others => '0'), is_swap => '0', is_out => '0', is_in => '0', is_hlt => '0',
-        branch_taken => '0', branch_addr => (others => '0')
+        branch_taken => '0', branch_addr => (others => '0'), branch => (others => '0')
     );
     constant MEM_WB_ZERO  : mem_wb_t  := (
         valid => '0', rd => (others => '0'), rs1 => (others => '0'), result => (others => '0'),
         mem_data => (others => '0'), swap_data => (others => '0'), flags => (others => '0'),
-        reg_write => '0', mem_to_reg => '0', flag_write => '0', is_swap => '0', is_hlt => '0'
+        reg_write => '0', mem_to_reg => '0', flag_write => '0', is_swap => '0', is_hlt => '0',
+        branch_taken => '0', branch => (others => '0')
     );
 
     signal ram      : ram_t := init_ram;
     signal regs     : reg_t := (others => (others => '0'));
     signal pc       : unsigned(31 downto 0) := (others => '0');
     signal sp       : unsigned(31 downto 0) := to_unsigned(4095, 32);
-    signal ccr      : std_logic_vector(2 downto 0) := (others => '0'); -- Z,N,C
+    signal ccr      : std_logic_vector(2 downto 0) := (others => '0'); -- Z, N, C
     signal out_reg  : word_t := (others => '0');
     signal halt_reg : std_logic := '0';
 
@@ -195,6 +214,11 @@ architecture rtl of processor_top is
     signal ex1_ex2  : ex1_ex2_t := EX1_EX2_ZERO;
     signal ex2_mem  : ex2_mem_t := EX2_MEM_ZERO;
     signal mem_wb   : mem_wb_t := MEM_WB_ZERO;
+    signal interrupt_pending : std_logic := '0';
+    signal pred_state  : predictor_state_t := (others => to_unsigned(1, 2));
+    signal pred_target : predictor_target_t := (others => (others => '0'));
+    signal pred_tag    : predictor_target_t := (others => (others => '0'));
+    signal pred_valid  : predictor_valid_t := (others => '0');
 
     function sx16(v : std_logic_vector(15 downto 0)) return word_t is
     begin
@@ -240,9 +264,9 @@ architecture rtl of processor_top is
         variable fn : std_logic_vector(2 downto 0) := instr(18 downto 16);
     begin
         if op = "0001" and (fn = "000" or fn = "001") then
-            return instr(27 downto 25); -- NOT/INC use Rdst
+            return instr(27 downto 25);
         elsif op = "0010" and fn = "001" then
-            return instr(27 downto 25); -- SWAP reads Rdst and Rsrc1
+            return instr(27 downto 25);
         else
             return instr(24 downto 22);
         end if;
@@ -253,10 +277,17 @@ architecture rtl of processor_top is
         variable fn : std_logic_vector(2 downto 0) := instr(18 downto 16);
     begin
         if op = "0010" and fn = "001" then
-            return instr(24 downto 22); -- SWAP second operand is Rsrc1
+            return instr(24 downto 22);
         else
             return instr(21 downto 19);
         end if;
+    end function;
+
+    function predictor_index_from_pc_next(pc_next : word_t) return integer is
+        variable pc_value : unsigned(31 downto 0);
+    begin
+        pc_value := unsigned(pc_next) - 1;
+        return to_integer(pc_value(3 downto 0));
     end function;
 begin
     out_port <= out_reg;
@@ -273,6 +304,10 @@ begin
         variable next_ex1_ex2 : ex1_ex2_t;
         variable next_ex2_mem : ex2_mem_t;
         variable next_mem_wb  : mem_wb_t;
+        variable next_pc       : unsigned(31 downto 0);
+        variable next_ccr      : std_logic_vector(2 downto 0);
+        variable next_interrupt_pending : std_logic;
+        variable pipeline_empty_next : std_logic;
         variable instr        : word_t;
         variable op           : std_logic_vector(3 downto 0);
         variable fn           : std_logic_vector(2 downto 0);
@@ -286,9 +321,17 @@ begin
         variable wb_value     : word_t;
         variable branch_hit   : std_logic;
         variable branch_dest  : word_t;
+        variable branch_instr : std_logic;
+        variable branch_actual_next : word_t;
+        variable branch_mispredict : std_logic;
+        variable pred_idx     : integer range 0 to 15;
+        variable fetch_pred_taken : std_logic;
+        variable fetch_pred_target : word_t;
+        variable fetch_instr  : word_t;
         variable mem_branch_hit  : std_logic;
         variable mem_branch_dest : word_t;
         variable load_use     : std_logic;
+        variable f_val        : std_logic_vector(2 downto 0);
         variable s1           : std_logic_vector(2 downto 0);
         variable s2           : std_logic_vector(2 downto 0);
         variable sp_addr      : unsigned(31 downto 0);
@@ -300,6 +343,11 @@ begin
             ccr <= (others => '0');
             out_reg <= (others => '0');
             halt_reg <= '0';
+            interrupt_pending <= '0';
+            pred_state <= (others => to_unsigned(1, 2));
+            pred_target <= (others => (others => '0'));
+            pred_tag <= (others => (others => '0'));
+            pred_valid <= (others => '0');
             if_id <= IF_ID_ZERO;
             id_ex <= ID_EX_ZERO;
             ex1_ex2 <= EX1_EX2_ZERO;
@@ -307,6 +355,13 @@ begin
             mem_wb <= MEM_WB_ZERO;
         elsif rising_edge(clk) then
             if halt_reg = '0' then
+                next_pc := pc;
+                next_ccr := ccr;
+                next_interrupt_pending := interrupt_pending;
+                if intr_in = '1' then
+                    next_interrupt_pending := '1';
+                end if;
+
                 next_if_id := IF_ID_ZERO;
                 next_id_ex := ID_EX_ZERO;
                 next_ex1_ex2 := EX1_EX2_ZERO;
@@ -327,14 +382,23 @@ begin
                         regs(to_integer(unsigned(mem_wb.rs1))) <= mem_wb.result;
                     end if;
                     if mem_wb.flag_write = '1' then
-                        ccr <= mem_wb.flags;
+                        next_ccr := mem_wb.flags;
+                    end if;
+                    -- Conditional jumps consume their flag once they are taken.
+                    if mem_wb.branch_taken = '1' then
+                        case mem_wb.branch is
+                            when "001" => next_ccr(0) := '0';
+                            when "010" => next_ccr(1) := '0';
+                            when "011" => next_ccr(2) := '0';
+                            when others => null;
+                        end case;
                     end if;
                     if mem_wb.is_hlt = '1' then
                         halt_reg <= '1';
                     end if;
                 end if;
 
-                -- MEM stage
+                -- Memory stage
                 mem_branch_hit := '0';
                 mem_branch_dest := (others => '0');
                 next_mem_wb.valid := ex2_mem.valid;
@@ -348,6 +412,8 @@ begin
                 next_mem_wb.flag_write := ex2_mem.flag_write;
                 next_mem_wb.is_swap := ex2_mem.is_swap;
                 next_mem_wb.is_hlt := ex2_mem.is_hlt;
+                next_mem_wb.branch_taken := ex2_mem.branch_taken;
+                next_mem_wb.branch := ex2_mem.branch;
 
                 if ex2_mem.valid = '1' then
                     if ex2_mem.mem_read = '1' then
@@ -373,18 +439,57 @@ begin
                     end if;
                 end if;
 
-                -- EX2 stage: branches, memory addresses, stack return addresses
+                -- EX2 resolves branches and prepares memory addresses.
+                f_val := ccr;
+                if ex2_mem.valid = '1' and ex2_mem.flag_write = '1' then
+                    f_val := ex2_mem.flags;
+                elsif mem_wb.valid = '1' and mem_wb.flag_write = '1' then
+                    f_val := mem_wb.flags;
+                end if;
+
                 branch_hit := '0';
                 branch_dest := ex1_ex2.imm;
+                branch_instr := '0';
+                branch_actual_next := ex1_ex2.pc_next;
+                branch_mispredict := '0';
                 if ex1_ex2.valid = '1' then
                     case ex1_ex2.branch is
-                        when "001" => if ccr(0) = '1' then branch_hit := '1'; end if; -- JZ
-                        when "010" => if ccr(1) = '1' then branch_hit := '1'; end if; -- JN
-                        when "011" => if ccr(2) = '1' then branch_hit := '1'; end if; -- JC
-                        when "100" => branch_hit := '1'; -- JMP/CALL/INT
-                        when "101" => null; -- RET/RTI redirect after stack pop in MEM
+                        when "001" => if f_val(0) = '1' then branch_hit := '1'; end if;
+                        when "010" => if f_val(1) = '1' then branch_hit := '1'; end if;
+                        when "011" => if f_val(2) = '1' then branch_hit := '1'; end if;
+                        when "100" => branch_hit := '1';
+                        when "101" => null;
                         when others => null;
                     end case;
+                    if ex1_ex2.branch /= "000" and ex1_ex2.branch /= "101" then
+                        branch_instr := '1';
+                    end if;
+                end if;
+
+                if branch_hit = '1' then
+                    branch_actual_next := branch_dest;
+                end if;
+
+                if branch_instr = '1' then
+                    if ex1_ex2.pred_taken /= branch_hit then
+                        branch_mispredict := '1';
+                    elsif branch_hit = '1' and ex1_ex2.pred_target /= branch_dest then
+                        branch_mispredict := '1';
+                    end if;
+
+                    pred_idx := predictor_index_from_pc_next(ex1_ex2.pc_next);
+                    if branch_hit = '1' then
+                        if pred_state(pred_idx) /= "11" then
+                            pred_state(pred_idx) <= pred_state(pred_idx) + 1;
+                        end if;
+                        pred_target(pred_idx) <= branch_dest;
+                    else
+                        if pred_state(pred_idx) /= "00" then
+                            pred_state(pred_idx) <= pred_state(pred_idx) - 1;
+                        end if;
+                    end if;
+                    pred_tag(pred_idx) <= std_logic_vector(unsigned(ex1_ex2.pc_next) - 1);
+                    pred_valid(pred_idx) <= '1';
                 end if;
 
                 next_ex2_mem.valid := ex1_ex2.valid;
@@ -406,6 +511,7 @@ begin
                 next_ex2_mem.is_hlt := ex1_ex2.is_hlt;
                 next_ex2_mem.branch_taken := branch_hit;
                 next_ex2_mem.branch_addr := branch_dest;
+                next_ex2_mem.branch := ex1_ex2.branch;
                 if ex1_ex2.is_swap = '1' then
                     next_ex2_mem.rs1 := ex1_ex2.rs2;
                 end if;
@@ -429,7 +535,7 @@ begin
                     branch_dest := next_ex2_mem.branch_addr;
                 end if;
 
-                -- EX1 stage with forwarding from EX2/MEM and MEM/WB.
+                -- EX1 operand forwarding.
                 a_val := id_ex.a;
                 b_val := id_ex.b;
                 if id_ex.valid = '1' then
@@ -462,6 +568,8 @@ begin
 
                 next_ex1_ex2.valid := id_ex.valid;
                 next_ex1_ex2.pc_next := id_ex.pc_next;
+                next_ex1_ex2.pred_taken := id_ex.pred_taken;
+                next_ex1_ex2.pred_target := id_ex.pred_target;
                 next_ex1_ex2.opcode := id_ex.opcode;
                 next_ex1_ex2.func := id_ex.func;
                 next_ex1_ex2.rd := id_ex.rd;
@@ -489,7 +597,7 @@ begin
                     next_ex1_ex2.result := id_ex.imm;
                 end if;
 
-                -- ID stage
+                -- Decode stage
                 instr := if_id.instr;
                 op := instr(31 downto 28);
                 fn := instr(18 downto 16);
@@ -509,6 +617,8 @@ begin
                 if if_id.valid = '1' and load_use = '0' then
                     next_id_ex.valid := '1';
                     next_id_ex.pc_next := if_id.pc_next;
+                    next_id_ex.pred_taken := if_id.pred_taken;
+                    next_id_ex.pred_target := if_id.pred_target;
                     next_id_ex.opcode := op;
                     next_id_ex.func := fn;
                     next_id_ex.rd := instr(27 downto 25);
@@ -582,38 +692,67 @@ begin
                     end case;
                 end if;
 
-                -- IF stage: static not-taken prediction.
+                -- Fetch stage with the branch predictor.
                 if mem_branch_hit = '1' then
-                    pc <= unsigned(mem_branch_dest);
+                    next_pc := unsigned(mem_branch_dest);
                     next_if_id := IF_ID_ZERO;
                     next_id_ex := ID_EX_ZERO;
                     next_ex1_ex2 := EX1_EX2_ZERO;
                     next_ex2_mem := EX2_MEM_ZERO;
-                elsif branch_hit = '1' then
-                    pc <= unsigned(branch_dest);
+                elsif branch_mispredict = '1' then
+                    next_pc := unsigned(branch_actual_next);
                     next_if_id := IF_ID_ZERO;
                     next_id_ex := ID_EX_ZERO;
                     next_ex1_ex2 := EX1_EX2_ZERO;
                 elsif load_use = '1' then
                     next_if_id := if_id;
+                elsif next_interrupt_pending = '1' then
+                    next_if_id := IF_ID_ZERO;
                 else
+                    pred_idx := to_integer(unsigned(pc(3 downto 0)));
+                    fetch_pred_taken := '0';
+                    fetch_pred_target := pred_target(pred_idx);
+                    fetch_instr := ram(to_integer(pc(11 downto 0)));
+                    if pred_valid(pred_idx) = '1' and pred_tag(pred_idx) = std_logic_vector(pc) and
+                       pred_state(pred_idx)(1) = '1' then
+                        fetch_pred_taken := '1';
+                    end if;
+
                     next_if_id.valid := '1';
                     next_if_id.pc := std_logic_vector(pc);
                     next_if_id.pc_next := std_logic_vector(pc + 1);
-                    next_if_id.instr := ram(to_integer(pc(11 downto 0)));
-                    pc <= pc + 1;
+                    next_if_id.instr := fetch_instr;
+                    next_if_id.pred_taken := fetch_pred_taken;
+                    next_if_id.pred_target := fetch_pred_target;
+                    if fetch_pred_taken = '1' then
+                        next_pc := unsigned(fetch_pred_target);
+                    else
+                        next_pc := pc + 1;
+                    end if;
                 end if;
 
-                if intr_in = '1' then
-                    -- External interrupt: save next PC and vector through M[1].
-                    ram(to_integer(sp(11 downto 0))) <= std_logic_vector(pc);
+                pipeline_empty_next := '0';
+                if next_if_id.valid = '0' and next_id_ex.valid = '0' and next_ex1_ex2.valid = '0' and
+                   next_ex2_mem.valid = '0' and next_mem_wb.valid = '0' then
+                    pipeline_empty_next := '1';
+                end if;
+
+                if next_interrupt_pending = '1' and pipeline_empty_next = '1' then
+                    -- Service the pending external interrupt after the pipe drains.
+                    ram(to_integer(sp(11 downto 0))) <= std_logic_vector(next_pc);
                     sp <= sp - 1;
-                    pc <= unsigned(ram(1));
+                    next_pc := unsigned(ram(1));
+                    next_interrupt_pending := '0';
                     next_if_id := IF_ID_ZERO;
                     next_id_ex := ID_EX_ZERO;
                     next_ex1_ex2 := EX1_EX2_ZERO;
+                    next_ex2_mem := EX2_MEM_ZERO;
+                    next_mem_wb := MEM_WB_ZERO;
                 end if;
 
+                pc <= next_pc;
+                ccr <= next_ccr;
+                interrupt_pending <= next_interrupt_pending;
                 if_id <= next_if_id;
                 id_ex <= next_id_ex;
                 ex1_ex2 <= next_ex1_ex2;
